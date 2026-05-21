@@ -2,7 +2,8 @@
   "include": [
     "remix.env.d.ts",
     "./src/**/*.ts",
-    "./src/**/*.tsx"
+    "./src/**/*.tsx",
+    "vite.config.ts"
   ],
   "compilerOptions": {
     "baseUrl": ".",

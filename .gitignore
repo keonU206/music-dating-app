@@ -11,6 +11,9 @@ node_modules
 /public/build
 .cache
 
+# Vercel
+.vercel
+
 # Legacy / misc
 dist
 dist-ssr
