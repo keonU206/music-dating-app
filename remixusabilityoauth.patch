@@ -1,0 +1,647 @@
+From 3276e6034ce07135380cc524e108cd76b49c72fc Mon Sep 17 00:00:00 2001
+From: claude <dev@example.com>
+Date: Fri, 22 May 2026 07:19:14 +0000
+Subject: [PATCH] =?UTF-8?q?=EC=82=AC=EC=9A=A9=EC=84=B1=20=EA=B0=9C?=
+ =?UTF-8?q?=EC=84=A0=20+=20=EC=86=8C=EC=85=9C=20=EB=A1=9C=EA=B7=B8?=
+ =?UTF-8?q?=EC=9D=B8(=EC=B9=B4=EC=B9=B4=EC=98=A4/=EA=B5=AC=EA=B8=80)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- 폰트: Pretendard를 Google Fonts(404) -> jsDelivr CDN으로 교체 (콘솔 stylesheet 에러/렌더 지연 해결)
+- 스플래시: 3초 -> 1.5초
+- welcome: 고정 px absolute -> flex 레이아웃 (시작하기/로그인 밀림/가시성 해결)
+- terms: 약관 레이아웃 정리 (빈 공간 제거, 카드형)
+- 소셜 로그인: Supabase OAuth(kakao/google) + /auth/callback, welcome/login 버튼
+---
+ src/components/SocialButton.tsx |  75 +++++++++++++++++
+ src/lib/oauth.client.ts         |  24 ++++++
+ src/root.tsx                    |   4 +-
+ src/routes/_index.tsx           |   2 +-
+ src/routes/auth.callback.tsx    |  28 +++++++
+ src/routes/login.tsx            |  40 ++++++---
+ src/routes/terms.tsx            |  70 +++++++---------
+ src/routes/welcome.tsx          | 139 +++++++++++++-------------------
+ 8 files changed, 244 insertions(+), 138 deletions(-)
+ create mode 100644 src/components/SocialButton.tsx
+ create mode 100644 src/lib/oauth.client.ts
+ create mode 100644 src/routes/auth.callback.tsx
+
+diff --git a/src/components/SocialButton.tsx b/src/components/SocialButton.tsx
+new file mode 100644
+index 0000000..ba2b514
+--- /dev/null
++++ b/src/components/SocialButton.tsx
+@@ -0,0 +1,75 @@
++import { useState } from "react";
++import type { ButtonHTMLAttributes, ReactNode } from "react";
++import { RADIUS, TYPOGRAPHY } from "~/lib/constants";
++import { signInWithProvider } from "~/lib/oauth.client";
++
++type Props = ButtonHTMLAttributes<HTMLButtonElement> & { children: ReactNode };
++
++const KAKAO_YELLOW = "#FEE500";
++const KAKAO_LABEL = "rgba(0,0,0,0.85)";
++
++export const KakaoButton = ({ children, style, disabled, ...rest }: Props) => {
++  const [busy, setBusy] = useState(false);
++  return (
++    <button
++      type="button"
++      {...rest}
++      disabled={disabled || busy}
++      onClick={() => {
++        setBusy(true);
++        void signInWithProvider("kakao");
++      }}
++      style={{
++        height: "56px",
++        background: KAKAO_YELLOW,
++        color: KAKAO_LABEL,
++        borderRadius: RADIUS.pill,
++        border: "none",
++        ...TYPOGRAPHY.bodyBold,
++        display: "flex",
++        alignItems: "center",
++        justifyContent: "center",
++        gap: "8px",
++        cursor: disabled || busy ? "not-allowed" : "pointer",
++        opacity: disabled || busy ? 0.7 : 1,
++        ...style,
++      }}
++    >
++      <span aria-hidden style={{ fontSize: "18px" }}>💬</span>
++      {busy ? "이동 중..." : children}
++    </button>
++  );
++};
++
++export const GoogleButton = ({ children, style, disabled, ...rest }: Props) => {
++  const [busy, setBusy] = useState(false);
++  return (
++    <button
++      type="button"
++      {...rest}
++      disabled={disabled || busy}
++      onClick={() => {
++        setBusy(true);
++        void signInWithProvider("google");
++      }}
++      style={{
++        height: "56px",
++        background: "#ffffff",
++        color: "rgba(0,0,0,0.7)",
++        borderRadius: RADIUS.pill,
++        border: "1px solid #e2e2e2",
++        ...TYPOGRAPHY.bodyBold,
++        display: "flex",
++        alignItems: "center",
++        justifyContent: "center",
++        gap: "8px",
++        cursor: disabled || busy ? "not-allowed" : "pointer",
++        opacity: disabled || busy ? 0.7 : 1,
++        ...style,
++      }}
++    >
++      <span aria-hidden style={{ fontSize: "16px", fontWeight: 700 }}>G</span>
++      {busy ? "이동 중..." : children}
++    </button>
++  );
++};
+diff --git a/src/lib/oauth.client.ts b/src/lib/oauth.client.ts
+new file mode 100644
+index 0000000..5981288
+--- /dev/null
++++ b/src/lib/oauth.client.ts
+@@ -0,0 +1,24 @@
++import { getSupabaseBrowser } from "~/lib/supabase.client";
++import { getClientEnv } from "~/lib/env.client";
++
++export type OAuthProvider = "kakao" | "google";
++
++// Starts the Supabase OAuth redirect flow. Returns to /auth/callback,
++// which exchanges the code for a session cookie.
++export async function signInWithProvider(provider: OAuthProvider): Promise<void> {
++  const env = getClientEnv();
++  const supabase = getSupabaseBrowser({
++    url: env.SUPABASE_URL,
++    anonKey: env.SUPABASE_ANON_KEY,
++  });
++
++  const { error } = await supabase.auth.signInWithOAuth({
++    provider,
++    options: { redirectTo: `${window.location.origin}/auth/callback` },
++  });
++
++  if (error) {
++    // eslint-disable-next-line no-alert
++    alert("소셜 로그인을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
++  }
++}
+diff --git a/src/root.tsx b/src/root.tsx
+index 0595426..e372a9d 100644
+--- a/src/root.tsx
++++ b/src/root.tsx
+@@ -11,9 +11,11 @@ import {
+ import "./styles/globals.css";
+ 
+ export const links: LinksFunction = () => [
++  // Pretendard is NOT on Google Fonts; the old URL 404'd and blocked render.
++  { rel: "preconnect", href: "https://cdn.jsdelivr.net", crossOrigin: "anonymous" },
+   {
+     rel: "stylesheet",
+-    href: "https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700&display=swap",
++    href: "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css",
+   },
+ ];
+ 
+diff --git a/src/routes/_index.tsx b/src/routes/_index.tsx
+index 9fea773..1b0df9e 100644
+--- a/src/routes/_index.tsx
++++ b/src/routes/_index.tsx
+@@ -11,7 +11,7 @@ export default function Index() {
+   useEffect(() => {
+     const timer = setTimeout(() => {
+       navigate("/welcome");
+-    }, 3000);
++    }, 1500);
+     return () => clearTimeout(timer);
+   }, [navigate]);
+ 
+diff --git a/src/routes/auth.callback.tsx b/src/routes/auth.callback.tsx
+new file mode 100644
+index 0000000..237c59f
+--- /dev/null
++++ b/src/routes/auth.callback.tsx
+@@ -0,0 +1,28 @@
++import { redirect, type LoaderFunctionArgs } from "@remix-run/node";
++import { createSupabaseServerClient } from "~/lib/supabase.server";
++import { getProfileFields } from "~/lib/repos/profiles.server";
++import { postApprovalDestination } from "~/lib/auth.server";
++
++// OAuth redirect target: exchange the ?code for a session cookie, then route
++// the user to the right step (mirrors the email/password login branching).
++export async function loader({ request }: LoaderFunctionArgs) {
++  const url = new URL(request.url);
++  const code = url.searchParams.get("code");
++  if (!code) return redirect("/login");
++
++  const { supabase, headers } = createSupabaseServerClient(request);
++  const { error } = await supabase.auth.exchangeCodeForSession(code);
++  if (error) return redirect("/login", { headers });
++
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++  if (!user) return redirect("/login", { headers });
++
++  const profile = await getProfileFields(supabase, user.id, ["user_id", "is_approved"]);
++  if (!profile) return redirect("/profile/basic", { headers });
++  if (!profile.is_approved) return redirect("/waiting", { headers });
++
++  const dest = await postApprovalDestination(supabase, user.id);
++  return redirect(dest, { headers });
++}
+diff --git a/src/routes/login.tsx b/src/routes/login.tsx
+index b7e0443..1368a83 100644
+--- a/src/routes/login.tsx
++++ b/src/routes/login.tsx
+@@ -6,6 +6,7 @@ import HomeIndicator from "~/components/HomeIndicator";
+ import PhoneFrame from "~/components/PhoneFrame";
+ import TextInput from "~/components/TextInput";
+ import { PrimaryButton } from "~/components/Button";
++import { KakaoButton, GoogleButton } from "~/components/SocialButton";
+ import { COLORS, TYPOGRAPHY } from "~/lib/constants";
+ import { postApprovalDestination, requireGuest } from "~/lib/auth.server";
+ import { createSupabaseServerClient } from "~/lib/supabase.server";
+@@ -75,8 +76,9 @@ export default function Login() {
+         method="post"
+         style={{
+           flex: 1,
+-          padding: "0 25px 120px",
+-          position: "relative",
++          padding: "0 25px 16px",
++          display: "flex",
++          flexDirection: "column",
+         }}
+       >
+         <h1
+@@ -161,7 +163,7 @@ export default function Login() {
+ 
+         <div
+           style={{
+-            marginTop: "32px",
++            marginTop: "20px",
+             textAlign: "center",
+             ...TYPOGRAPHY.label,
+             color: COLORS.text.helper,
+@@ -180,17 +182,31 @@ export default function Login() {
+           </Link>
+         </div>
+ 
+-        <div
+-          style={{
+-            position: "absolute",
+-            bottom: "34px",
+-            left: "50%",
+-            transform: "translateX(-50%)",
+-          }}
+-        >
+-          <PrimaryButton type="submit" disabled={!canSubmit}>
++        {/* 본문과 하단 액션 사이 여백 */}
++        <div style={{ flex: 1, minHeight: "24px" }} />
++
++        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
++          <PrimaryButton type="submit" disabled={!canSubmit} style={{ width: "100%" }}>
+             {submitting ? "로그인 중..." : "로그인"}
+           </PrimaryButton>
++
++          <div
++            style={{
++              display: "flex",
++              alignItems: "center",
++              gap: "10px",
++              margin: "4px 0",
++              ...TYPOGRAPHY.caption,
++              color: COLORS.text.placeholder,
++            }}
++          >
++            <span style={{ flex: 1, height: "1px", background: COLORS.divider }} />
++            소셜 계정으로 로그인
++            <span style={{ flex: 1, height: "1px", background: COLORS.divider }} />
++          </div>
++
++          <KakaoButton style={{ width: "100%" }}>카카오로 계속하기</KakaoButton>
++          <GoogleButton style={{ width: "100%" }}>Google로 계속하기</GoogleButton>
+         </div>
+       </Form>
+       <HomeIndicator />
+diff --git a/src/routes/terms.tsx b/src/routes/terms.tsx
+index 53973ea..aef2709 100644
+--- a/src/routes/terms.tsx
++++ b/src/routes/terms.tsx
+@@ -5,6 +5,7 @@ import HomeIndicator from "~/components/HomeIndicator";
+ import PhoneFrame from "~/components/PhoneFrame";
+ import ProgressDots from "~/components/ProgressDots";
+ import SignupStepNav from "~/components/SignupStepNav";
++import { PrimaryButton } from "~/components/Button";
+ import { COLORS, TYPOGRAPHY, RADIUS } from "~/lib/constants";
+ 
+ // 약관은 회원가입 전 단계 — 익명 접근 가능
+@@ -81,14 +82,12 @@ export default function Terms() {
+       <div
+         style={{
+           flex: 1,
+-          padding: "0 25px",
+-          paddingBottom: "120px",
+-          position: "relative",
++          padding: "0 25px 16px",
+           display: "flex",
+           flexDirection: "column",
+         }}
+       >
+-        <div style={{ marginTop: "30px", marginBottom: "30px" }}>
++        <div style={{ marginTop: "24px", marginBottom: "28px" }}>
+           <ProgressDots total={4} current={1} />
+         </div>
+ 
+@@ -110,15 +109,13 @@ export default function Terms() {
+             ...TYPOGRAPHY.body,
+             color: COLORS.text.helper,
+             margin: 0,
++            marginBottom: "28px",
+           }}
+         >
+-          서비스를 시작하기위해 약관을 확인해주세요.
++          서비스를 시작하기 위해 약관에 동의해주세요.
+         </p>
+ 
+-        {/* 약관 영역 — 하단으로 밀어내기 위해 flex spacer */}
+-        <div style={{ flex: 1 }} />
+-
+-        {/* 전체동의 박스 */}
++        {/* 전체동의 */}
+         <button
+           type="button"
+           onClick={toggleAll}
+@@ -127,19 +124,20 @@ export default function Terms() {
+             display: "flex",
+             alignItems: "center",
+             gap: "12px",
+-            padding: "16px 18px",
+-            background: COLORS.cardBg,
+-            borderRadius: RADIUS.alert,
++            padding: "18px",
++            background: allChecked ? COLORS.accentSoft : COLORS.cardBg,
++            borderRadius: RADIUS.card,
++            border: "none",
+             textAlign: "left",
+-            marginBottom: "20px",
++            marginBottom: "8px",
++            transition: "background 0.15s",
+           }}
+         >
+           <Check checked={allChecked} />
+           <span
+             style={{
+-              ...TYPOGRAPHY.body,
+-              fontWeight: 600,
+-              color: COLORS.text.secondary,
++              ...TYPOGRAPHY.bodyBold,
++              color: allChecked ? COLORS.accent : COLORS.text.primary,
+             }}
+           >
+             약관 전체동의
+@@ -149,10 +147,8 @@ export default function Terms() {
+         {/* 개별 항목 */}
+         <div
+           style={{
+-            padding: "0 8px",
+             display: "flex",
+             flexDirection: "column",
+-            gap: "18px",
+           }}
+         >
+           {TERMS.map((t) => (
+@@ -162,6 +158,7 @@ export default function Terms() {
+                 display: "flex",
+                 alignItems: "center",
+                 gap: "12px",
++                padding: "14px 8px",
+               }}
+             >
+               <button
+@@ -174,14 +171,17 @@ export default function Terms() {
+                   gap: "12px",
+                   flex: 1,
+                   padding: 0,
++                  background: "none",
++                  border: "none",
+                   textAlign: "left",
++                  cursor: "pointer",
+                 }}
+               >
+                 <Check checked={!!agreed[t.id]} size={20} />
+                 <span
+                   style={{
+                     ...TYPOGRAPHY.body,
+-                    color: COLORS.text.secondary,
++                    color: agreed[t.id] ? COLORS.text.primary : COLORS.text.secondary,
+                   }}
+                 >
+                   {t.label}
+@@ -195,7 +195,10 @@ export default function Terms() {
+                   color: COLORS.text.placeholder,
+                   fontSize: "20px",
+                   padding: "4px 6px",
++                  background: "none",
++                  border: "none",
+                   flexShrink: 0,
++                  cursor: "pointer",
+                 }}
+               >
+                 ›
+@@ -203,35 +206,18 @@ export default function Terms() {
+             </div>
+           ))}
+         </div>
+-      </div>
+ 
+-      {/* 다음으로 — 풀폭 */}
+-      <div
+-        style={{
+-          position: "absolute",
+-          bottom: "34px",
+-          left: "20px",
+-          right: "20px",
+-        }}
+-      >
+-        <button
++        {/* 본문과 버튼 사이 여백 */}
++        <div style={{ flex: 1, minHeight: "24px" }} />
++
++        <PrimaryButton
+           type="button"
+           onClick={goNext}
+           disabled={!allChecked}
+-          style={{
+-            width: "100%",
+-            height: "56px",
+-            borderRadius: RADIUS.pill,
+-            background: COLORS.accent,
+-            color: "white",
+-            ...TYPOGRAPHY.title,
+-            fontSize: "17px",
+-            cursor: allChecked ? "pointer" : "not-allowed",
+-            opacity: allChecked ? 1 : 0.7,
+-          }}
++          style={{ width: "100%" }}
+         >
+           다음으로
+-        </button>
++        </PrimaryButton>
+       </div>
+       <HomeIndicator />
+     </PhoneFrame>
+diff --git a/src/routes/welcome.tsx b/src/routes/welcome.tsx
+index f06bf8a..a8e4d91 100644
+--- a/src/routes/welcome.tsx
++++ b/src/routes/welcome.tsx
+@@ -3,137 +3,112 @@ import StatusBar from "~/components/StatusBar";
+ import HomeIndicator from "~/components/HomeIndicator";
+ import PhoneFrame from "~/components/PhoneFrame";
+ import { PrimaryButton } from "~/components/Button";
++import { KakaoButton } from "~/components/SocialButton";
+ import { COLORS, TYPOGRAPHY } from "~/lib/constants";
+ 
+-const Dot = ({
+-  size,
+-  top,
+-  left,
+-  color = COLORS.accentSoft,
+-}: {
+-  size: number;
+-  top: number;
+-  left: number;
+-  color?: string;
+-}) => (
+-  <span
+-    style={{
+-      position: "absolute",
+-      top: `${top}px`,
+-      left: `${left}px`,
+-      width: `${size}px`,
+-      height: `${size}px`,
+-      borderRadius: "50%",
+-      background: color,
+-    }}
+-  />
+-);
+-
+ export default function Welcome() {
+   const navigate = useNavigate();
+ 
+   return (
+     <PhoneFrame>
+       <StatusBar />
+-      <div style={{ position: "relative", flex: 1 }}>
+-        {/* 좌측 장식 도트 */}
+-        <Dot size={16} top={158} left={91} />
+-        <Dot size={9} top={196} left={91} />
+-        <Dot size={9} top={162} left={131} />
+-        {/* 우측 장식 도트 */}
+-        <Dot size={16} top={162} left={283} />
+-        <Dot size={9} top={162} left={252} />
+-        <Dot size={9} top={202} left={286} />
+ 
+-        {/* 제목 */}
+-        <h1
+-          style={{
+-            ...TYPOGRAPHY.display,
+-            position: "absolute",
+-            top: "179px",
+-            left: "50%",
+-            transform: "translateX(-50%)",
+-            color: COLORS.accent,
+-            margin: 0,
+-            whiteSpace: "nowrap",
+-          }}
+-        >
++      {/* 본문 — flex 로 채워서 화면 높이에 상관없이 안정적으로 배치 */}
++      <div
++        style={{
++          flex: 1,
++          display: "flex",
++          flexDirection: "column",
++          alignItems: "center",
++          justifyContent: "center",
++          padding: "0 20px",
++          textAlign: "center",
++        }}
++      >
++        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
++          {[16, 9, 9].map((s, i) => (
++            <span
++              key={i}
++              style={{
++                width: `${s}px`,
++                height: `${s}px`,
++                borderRadius: "50%",
++                background: COLORS.accentSoft,
++                alignSelf: "center",
++              }}
++            />
++          ))}
++        </div>
++
++        <h1 style={{ ...TYPOGRAPHY.display, color: COLORS.accent, margin: 0 }}>
+           환영합니다!
+         </h1>
+ 
+-        {/* 서브타이틀 */}
+         <p
+           style={{
+             ...TYPOGRAPHY.body,
+-            position: "absolute",
+-            top: "243px",
+-            left: "50%",
+-            transform: "translateX(-50%)",
+             color: COLORS.text.helper,
+-            textAlign: "center",
+-            margin: 0,
+-            whiteSpace: "nowrap",
++            margin: "16px 0 0",
++            lineHeight: 1.6,
+           }}
+         >
+-          <span style={{ fontWeight: 700 }}>노래</span>
++          <span style={{ fontWeight: 700, color: COLORS.text.primary }}>노래</span>
+           로 이어지는{" "}
+-          <span style={{ fontWeight: 700 }}>인연</span>
++          <span style={{ fontWeight: 700, color: COLORS.text.primary }}>인연</span>
+           <br />
+           지금 만나러 가볼까요?
+         </p>
+ 
+-        {/* 마스코트 일러스트 */}
+         <img
+           src="/images/welcome-mascot.png"
+           alt=""
+           style={{
+-            position: "absolute",
+-            top: "321px",
+-            left: "23px",
+-            width: "344px",
+-            height: "314px",
++            width: "100%",
++            maxWidth: "300px",
++            marginTop: "28px",
+             objectFit: "contain",
+           }}
+         />
++      </div>
+ 
+-        {/* CTA */}
++      {/* 하단 액션 — 항상 화면 하단에 고정, 화면 밖으로 안 밀림 */}
++      <div
++        style={{
++          padding: "0 20px 16px",
++          display: "flex",
++          flexDirection: "column",
++          alignItems: "center",
++          gap: "10px",
++        }}
++      >
+         <PrimaryButton
+           onClick={() => navigate("/terms")}
+-          style={{
+-            position: "absolute",
+-            top: "720px",
+-            left: "50%",
+-            transform: "translateX(-50%)",
+-          }}
++          style={{ width: "100%", maxWidth: "350px" }}
+         >
+           시작하기
+         </PrimaryButton>
+ 
+-        {/* 로그인 링크 */}
++        <KakaoButton style={{ width: "100%", maxWidth: "350px" }}>
++          카카오로 3초 만에 시작
++        </KakaoButton>
++
+         <div
+           style={{
+-            position: "absolute",
+-            top: "800px",
+-            left: "50%",
+-            transform: "translateX(-50%)",
+-            ...TYPOGRAPHY.label,
+-            color: COLORS.text.helper,
+-            whiteSpace: "nowrap",
++            ...TYPOGRAPHY.body,
++            color: COLORS.text.secondary,
++            marginTop: "4px",
+           }}
+         >
+           이미 계정 있어요?{" "}
+           <Link
+             to="/login"
+-            style={{
+-              color: COLORS.accent,
+-              fontWeight: 600,
+-              textDecoration: "underline",
+-            }}
++            style={{ color: COLORS.accent, fontWeight: 700, textDecoration: "none" }}
+           >
+             로그인
+           </Link>
+         </div>
+       </div>
++
+       <HomeIndicator />
+     </PhoneFrame>
+   );
+-- 
+2.43.0
+

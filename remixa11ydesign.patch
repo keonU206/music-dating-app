@@ -1,0 +1,264 @@
+From c611c6fd748b957fcce15f27b575a7eed2da7d0c Mon Sep 17 00:00:00 2001
+From: claude <dev@example.com>
+Date: Fri, 22 May 2026 07:33:31 +0000
+Subject: [PATCH] =?UTF-8?q?=EC=A0=91=EA=B7=BC=EC=84=B1=C2=B7=EB=94=94?=
+ =?UTF-8?q?=EC=9E=90=EC=9D=B8=20=EA=B0=9C=EC=84=A0?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+접근성:
+- 키보드 포커스 링 복원(:focus-visible) — 기존 전역 outline:none 제거
+- 텍스트 대비 상향(helper/secondary) WCAG AA 충족
+- TextInput 라벨↔input 연결(htmlFor/id)
+- 약관 전문보기·비번찾기 터치영역 44px 확보
+디자인:
+- PrimaryButton 고정 350px -> width100%/maxWidth (좁은 기기 잘림 방지)
+- BottomNav 픽셀 절대배치 -> flex 균등배치 (+aria-current/label)
+---
+ src/components/BottomNav.tsx | 32 ++++++++++++++------------------
+ src/components/Button.tsx    |  3 ++-
+ src/components/TextInput.tsx | 13 ++++++++++---
+ src/lib/constants.ts         |  5 +++--
+ src/routes/login.tsx         |  6 +++++-
+ src/routes/terms.tsx         |  6 +++++-
+ src/styles/globals.css       | 24 ++++++++++++++----------
+ 7 files changed, 53 insertions(+), 36 deletions(-)
+
+diff --git a/src/components/BottomNav.tsx b/src/components/BottomNav.tsx
+index 3df562f..4b7a149 100644
+--- a/src/components/BottomNav.tsx
++++ b/src/components/BottomNav.tsx
+@@ -36,9 +36,10 @@ export const BottomNav = ({ active }: BottomNavProps) => {
+     (location.pathname.startsWith("/chat") ? "chat" : undefined);
+ 
+   return (
+-    <div
++    <nav
+       style={{
+-        width: FRAME.width,
++        width: "100%",
++        maxWidth: FRAME.width,
+         height: FRAME.bottomNavHeight,
+         background: "white",
+         boxShadow: SHADOW.bottomNav,
+@@ -47,31 +48,30 @@ export const BottomNav = ({ active }: BottomNavProps) => {
+         left: "50%",
+         transform: "translateX(-50%)",
+         zIndex: 10,
++        display: "flex",
++        paddingTop: "14px",
+       }}
+     >
+-      {NAV_ITEMS.map((item, idx) => {
++      {NAV_ITEMS.map((item) => {
+         const isActive = activeKey === item.key;
+-        const tabLeft = 22.5 + idx * 90;
+         return (
+           <Link
+             key={item.key}
+             to={item.path}
++            aria-label={item.label}
++            aria-current={isActive ? "page" : undefined}
+             style={{
+-              position: "absolute",
+-              top: "2px",
+-              left: `${tabLeft}px`,
+-              width: "75px",
+-              height: "103px",
+-              display: "block",
++              flex: 1,
++              display: "flex",
++              flexDirection: "column",
++              alignItems: "center",
++              gap: "6px",
+             }}
+           >
+             <img
+               src={item.icon}
+               alt=""
+               style={{
+-                position: "absolute",
+-                top: "16px",
+-                left: "19.5px",
+                 width: "36px",
+                 height: "36px",
+                 filter: isActive ? "none" : "grayscale(1) opacity(0.55)",
+@@ -80,10 +80,6 @@ export const BottomNav = ({ active }: BottomNavProps) => {
+             <span
+               style={{
+                 ...TYPOGRAPHY.nav,
+-                position: "absolute",
+-                top: "53.57px",
+-                left: "50%",
+-                transform: "translateX(-50%)",
+                 color: isActive ? COLORS.nav.active : COLORS.nav.inactive,
+                 whiteSpace: "nowrap",
+               }}
+@@ -93,7 +89,7 @@ export const BottomNav = ({ active }: BottomNavProps) => {
+           </Link>
+         );
+       })}
+-    </div>
++    </nav>
+   );
+ };
+ 
+diff --git a/src/components/Button.tsx b/src/components/Button.tsx
+index 605e1a8..03011a6 100644
+--- a/src/components/Button.tsx
++++ b/src/components/Button.tsx
+@@ -16,7 +16,8 @@ export const PrimaryButton = ({
+       {...rest}
+       disabled={disabled}
+       style={{
+-        width: "350px",
++        width: "100%",
++        maxWidth: "350px",
+         height: "62px",
+         background: disabled ? COLORS.cardBorder : COLORS.accent,
+         color: "white",
+diff --git a/src/components/TextInput.tsx b/src/components/TextInput.tsx
+index 980f10b..1f73fa6 100644
+--- a/src/components/TextInput.tsx
++++ b/src/components/TextInput.tsx
+@@ -5,9 +5,14 @@ type TextInputProps = InputHTMLAttributes<HTMLInputElement> & {
+   label?: ReactNode;
+ };
+ 
+-export const TextInput = ({ label, style, ...rest }: TextInputProps) => {
++export const TextInput = ({ label, style, id, name, ...rest }: TextInputProps) => {
++  // 라벨↔input 연결용 id (스크린리더 접근성)
++  const inputId = id ?? (typeof name === "string" ? name : undefined);
++
+   const input = (
+     <input
++      id={inputId}
++      name={name}
+       {...rest}
+       style={{
+         boxSizing: "border-box",
+@@ -30,15 +35,17 @@ export const TextInput = ({ label, style, ...rest }: TextInputProps) => {
+ 
+   return (
+     <div>
+-      <div
++      <label
++        htmlFor={inputId}
+         style={{
+           ...TYPOGRAPHY.bodyBold,
++          display: "block",
+           color: COLORS.text.primary,
+           marginBottom: "10px",
+         }}
+       >
+         {label}
+-      </div>
++      </label>
+       {input}
+     </div>
+   );
+diff --git a/src/lib/constants.ts b/src/lib/constants.ts
+index 86fc22a..470c1df 100644
+--- a/src/lib/constants.ts
++++ b/src/lib/constants.ts
+@@ -11,8 +11,9 @@ export const COLORS = {
+   divider2: "#f3f3f3",
+   text: {
+     primary: "#000000",
+-    secondary: "#808080",
+-    helper: "#929292",
++    // secondary/helper 어둡게 조정 — 흰 배경 대비 WCAG AA(4.5:1) 충족
++    secondary: "#6b6b6b",
++    helper: "#767676",
+     placeholder: "#bfbfbf",
+     muted: "#bdbdbd",
+     veryMuted: "#9f9f9f",
+diff --git a/src/routes/login.tsx b/src/routes/login.tsx
+index 1368a83..cff6842 100644
+--- a/src/routes/login.tsx
++++ b/src/routes/login.tsx
+@@ -153,8 +153,12 @@ export default function Login() {
+             onClick={() => alert("관리자에게 문의해주세요 (MVP)")}
+             style={{
+               ...TYPOGRAPHY.caption,
+-              color: COLORS.text.placeholder,
++              color: COLORS.text.secondary,
+               textDecoration: "underline",
++              padding: "8px 4px",
++              background: "none",
++              border: "none",
++              cursor: "pointer",
+             }}
+           >
+             비밀번호를 잊으셨나요?
+diff --git a/src/routes/terms.tsx b/src/routes/terms.tsx
+index aef2709..b2c0d39 100644
+--- a/src/routes/terms.tsx
++++ b/src/routes/terms.tsx
+@@ -194,7 +194,11 @@ export default function Terms() {
+                 style={{
+                   color: COLORS.text.placeholder,
+                   fontSize: "20px",
+-                  padding: "4px 6px",
++                  minWidth: "44px",
++                  minHeight: "44px",
++                  display: "flex",
++                  alignItems: "center",
++                  justifyContent: "center",
+                   background: "none",
+                   border: "none",
+                   flexShrink: 0,
+diff --git a/src/styles/globals.css b/src/styles/globals.css
+index 577c233..cfb75a7 100644
+--- a/src/styles/globals.css
++++ b/src/styles/globals.css
+@@ -45,8 +45,8 @@ button {
+   font-family: inherit;
+   color: inherit;
+ }
+-button:focus,
+-button:focus-visible,
++/* 마우스 클릭 시엔 아웃라인 제거하되, 키보드 포커스(:focus-visible)는 보이게 */
++button:focus:not(:focus-visible),
+ button:active {
+   outline: none;
+ }
+@@ -60,15 +60,8 @@ select {
+   background: transparent;
+   color: inherit;
+ }
+-input:focus,
+-textarea:focus,
+-select:focus {
+-  outline: none;
+-}
+ 
+-a,
+-a:focus,
+-a:active {
++a:focus:not(:focus-visible) {
+   outline: none;
+ }
+ 
+@@ -76,6 +69,17 @@ img {
+   outline: none;
+ }
+ 
++/* 키보드 사용자용 가시 포커스 링 */
++button:focus-visible,
++a:focus-visible,
++input:focus-visible,
++textarea:focus-visible,
++select:focus-visible {
++  outline: 2px solid #ff625d;
++  outline-offset: 2px;
++  border-radius: 4px;
++}
++
+ input::placeholder,
+ textarea::placeholder {
+   color: #bfbfbf;
+-- 
+2.43.0
+
